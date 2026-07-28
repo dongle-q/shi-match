@@ -1,0 +1,49 @@
+/doc/build
+
+# macOS
+.DS_Store
+
+# VS Code
+.idea/
+.vscode/
+*.code-workspace
+*.code-history
+
+# Zed
+.zed/
+
+# JetBrains (IntelliJ, WebStorm, PyCharm, etc.)
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+target/
+*.log
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+.sublime-project
+.sublime-workspace
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.*.swp
+.*.swo
+*~
+
+# Vim
+.swap
+.swp
+.SWAP
+*.swo
+*~
+
+
