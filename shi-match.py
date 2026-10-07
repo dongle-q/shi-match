@@ -47,6 +47,16 @@ parser.add_argument(
 )
 
 parser.add_argument(
+    "-extend",
+    "-ext",
+    "-add",
+    dest="ext_mo",
+    type=int,
+    default=0,
+    help="Add more vir. MOs (alpha+beta) for orbital rotation. Non-converged calculations will automatically add orbitals to the rotation space. This option lets users control the calculation more flexibly."
+)
+
+parser.add_argument(
     "-hw",
     "--hardware",
     dest="hardware",
@@ -359,12 +369,14 @@ b_HOMO_idx = n_beta_elec - 1
 b_SUMO_idx = n_beta_elec
 
 log.write("\n")
-log.write(f"                 Alpha electrons: {n_alpha_elec}\n")
-log.write(f"                  Beta electrons: {n_beta_elec}\n\n")
-log.write(f"                Alpha HOMO index: {a_HOMO_idx + 1}\n")
-log.write(f"                 Beta HOMO index: {b_HOMO_idx + 1}\n")
-log.write(f"          Lowest Beta SUMO index: {b_SUMO_idx + 1}\n\n")
-log.write(f"                            2S+1: {0.5 * dlt_elec * 2 + 1:.0f}\n")
+log.write(f'''
+                 Alpha electrons: {n_alpha_elec}
+                  Beta electrons: {n_beta_elec}
+                Alpha HOMO index: {a_HOMO_idx + 1}
+                 Beta HOMO index: {b_HOMO_idx + 1}
+          Lowest Beta SUMO index: {b_SUMO_idx + 1}
+                            2S+1: {0.5 * dlt_elec * 2 + 1:.0f}
+             Additional vir. MOs: {args.ext_mo}''')
 # Get the MO coefs
 # alpha_coef and beta_coef are NOT full coefs matrix. It only include alpha occupied  (all occ)
 # and beta occupied + beta SUMO (all occ+1virt)
@@ -372,8 +384,8 @@ init_S_ab = reduce(np.dot, (c_a_scf_full, ovlp_bf, b_full_coef.T))
 
 
 # Alpha set contains orbitals that will be used in rotation
-alpha_set = [i + 1 for i in range(n_alpha_elec)]
-beta_set = [i + 1 for i in range(n_alpha_elec)]
+alpha_set = list(range(1, n_alpha_elec + args.ext_mo + 1))
+beta_set = alpha_set.copy()
 
 
 log.write("\nINITIAL OVERLAP\n")
