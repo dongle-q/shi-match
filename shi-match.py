@@ -142,7 +142,7 @@ def print_overlap(smat, numb):
             row += f" {formatted_overlap(smat[a_idx][b_idx])}"
         log.write(row + "\n")
 
-    log.write("Note: [*] = occupied,      [ ] = virtual")
+    log.write("\nNote: [*] = occupied,      [ ] = virtual\n")
 
 
 def write_arr_movecs(ascii_output, arr):
