@@ -21,6 +21,10 @@ To update the code, simply run::
 
     git pull
 
-You can put the code in PATH by adding the following line to your shell configuration file (e.g. ``~/.bashrc``)::
+Run the command from the repository root with::
 
-    export PATH=$PATH:/path/to/shi-match
+    src/shi-match.py <file47>
+
+Alternatively, add the ``src`` directory to ``PATH`` in your shell configuration file (e.g. ``~/.bashrc``)::
+
+    export PATH=$PATH:/path/to/shi-match/src

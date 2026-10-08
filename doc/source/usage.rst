@@ -68,13 +68,13 @@ Quick Start
 
 With previous input files, SHI-match can be executed as follows ::
 
-    shi-match.py <file47>
+    src/shi-match.py <file47>
 
 The output will be saved in :file:`shi_match.log`.
 
 To specify hardware you want to use, you can run with ``-hw`` or ``---hardware`` option ::
 
-    shi-match.py <file47> -hw <hardware>
+    src/shi-match.py <file47> -hw <hardware>
 
 Accpetable hardware options are: ``cpu``, ``cuda`` (NVIDIA GPU), ``rocm`` (AMD GPU) and ``tpu``. The default is ``cpu``.
 
@@ -83,7 +83,7 @@ Gaussian cube
 
 To visualize transformed orbitals, you can run with ``-gaussian`` or ``-fch`` or ``-fchk`` or ``-g16`` option ::
 
-    shi-match.py <file47> -gaussian molecule.fchk
+    src/shi-match.py <file47> -gaussian molecule.fchk
 
 SHI-match will generate a new file named :file:`transformed.fchk` that can be viewed with Avogadro or other tools.
 
@@ -92,7 +92,7 @@ NWChem cube
 
 To visualize transformed orbitals, you can run with ``-nwchem`` or ``-ascii-movecs`` option ::
 
-    shi-match.py <file47> -nwchem <scf_ascii_file>
+    src/shi-match.py <file47> -nwchem <scf_ascii_file>
 
 This ASCII file can be obtained with the mov2asc tool located in $NWCHEM_TOP/contrib/mov2asc.
 
