@@ -123,19 +123,26 @@ toEV = 27.2113245702
 def formatted_overlap(number):
     return "       " if abs(number) < 0.01 else f"{number: >+7.4f}".replace("+", " ")
 
+def label_mo(is_alpha, idx):
+    homo_idx = a_HOMO_idx if is_alpha else b_HOMO_idx
+    return "[*]" if idx <= homo_idx else "[ ]"
+
 
 def print_overlap(smat, numb):
-    header = "      |"
-    for a_idx in range(n_alpha_elec - numb, n_alpha_elec):
-        header += f"  b_{a_idx + 1:04d}"
-    header += "\n"
+    print_range = range(max(0,n_alpha_elec + args.ext_mo - numb), n_alpha_elec +  args.ext_mo)
+    header = "          " + "".join(f"  b_{b_idx + 1:04d}" for b_idx in print_range)+"\n"
     log.write(header)
-    log.write("---------------------------------------------------------------\n")
-    for a_idx in range(n_alpha_elec - numb, n_alpha_elec):
-        row = f"a_{a_idx + 1:04d}|"
+    header = "          " + "".join(f"     {label_mo(False, b_idx)}" for b_idx in print_range)+"\n"
+    log.write(header)
+
+    log.write("-"*(10+6*len(print_range))+"\n")
+    for a_idx in print_range:
+        row = f"a_{a_idx + 1:04d} {label_mo(True,a_idx)}"
         for b_idx in range(n_alpha_elec - numb, n_alpha_elec):
             row += f" {formatted_overlap(smat[a_idx][b_idx])}"
         log.write(row + "\n")
+
+    log.write("Note: [*] = occupied,      [ ] = virtual")
 
 
 def write_arr_movecs(ascii_output, arr):
@@ -405,10 +412,9 @@ log.write("\n")
 n_rot_elem = len(alpha_set)
 n_uniq_antisym_elem = (
     n_rot_elem * (n_rot_elem - 1) // 2
-)  # Number of unique elements in X
+)
 
 
-# Select alpha and beta orbitals by sets determined by overlap threshold
 c_a_occ = c_a_scf_full.T[:, np.array(alpha_set) - 1]
 c_b_occ_pl_sumo = b_full_coef.T[:, np.array(beta_set) - 1]
 init_ovlp_ab = jnp.dot(c_a_occ.T, jnp.dot(ovlp_bf, c_b_occ_pl_sumo))
@@ -552,7 +558,7 @@ def shi_match():
     log.write("\n")
     log.write(f"The minimization is done after {result.nit} steps.\n")
     final_J2 = object_func(result.x, init_ovlp_ab)
-    log.write(f"Squared Frobenius norm     ||S^2-1||2F  =  {final_J2:.5f} \n")
+    log.write(f"Squared Frobenius norm ||S^2-1||2F  =  {final_J2:.5f} \n")
 
     # Extract the final result
     final_rotation_matrix = expm(antisymm_mat_from_vec(result.x))
