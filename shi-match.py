@@ -120,29 +120,30 @@ log.write(f"Work directory : {current_directory} \n")
 toEV = 27.2113245702
 
 
-def formatted_overlap(number):
-    return "       " if abs(number) < 0.01 else f"{number: >+7.4f}".replace("+", " ")
+def format_overlap(number, final_ovlp, b_idx):
+    if final_ovlp and b_idx > b_HOMO_idx:
+        return "       " if abs(number) < 0.01 else f"({number: >+5.2f})"
+    else:
+      return "       " if abs(number) < 0.01 else f"{number: >+7.2f}".replace("+", " ")
 
 def label_mo(is_alpha, idx):
     homo_idx = a_HOMO_idx if is_alpha else b_HOMO_idx
     return "[*]" if idx <= homo_idx else "[ ]"
 
 
-def print_overlap(smat, numb):
+def print_overlap(smat, numb, final_ovlp):
     print_range = range(max(0,n_alpha_elec + args.ext_mo - numb), n_alpha_elec +  args.ext_mo)
     header = "          " + "".join(f"  b_{b_idx + 1:04d}" for b_idx in print_range)+"\n"
     log.write(header)
     header = "          " + "".join(f"     {label_mo(False, b_idx)}" for b_idx in print_range)+"\n"
     log.write(header)
 
-    log.write("-"*(10+6*len(print_range))+"\n")
+    log.write("-"*(10+8*len(print_range))+"\n")
     for a_idx in print_range:
-        row = f"a_{a_idx + 1:04d} {label_mo(True,a_idx)}"
-        for b_idx in range(n_alpha_elec - numb, n_alpha_elec):
-            row += f" {formatted_overlap(smat[a_idx][b_idx])}"
+        row = f"a_{a_idx + 1:04d} {label_mo(True,a_idx)}" + "".join(f" {format_overlap(smat[a_idx][b_idx],final_ovlp,b_idx)}" for b_idx in print_range)
         log.write(row + "\n")
 
-    log.write("\nNote: [*] = occupied,      [ ] = virtual\n")
+    log.write("\n NOTE: [*] = occupied      [ ] = virtual\n")
 
 
 def write_arr_movecs(ascii_output, arr):
@@ -397,7 +398,7 @@ beta_set = alpha_set.copy()
 
 log.write("\nINITIAL OVERLAP\n")
 log.write("=====================\n")
-print_overlap(init_S_ab, 10)
+print_overlap(init_S_ab, 10, False)
 
 init_a_maxovlp_idx = np.argmax(abs(init_S_ab[:, n_beta_elec]))
 init_maxovlp = init_S_ab[init_a_maxovlp_idx, n_beta_elec]
@@ -417,7 +418,7 @@ n_uniq_antisym_elem = (
 
 c_a_occ = c_a_scf_full.T[:, np.array(alpha_set) - 1]
 c_b_occ_pl_sumo = b_full_coef.T[:, np.array(beta_set) - 1]
-init_ovlp_ab = jnp.dot(c_a_occ.T, jnp.dot(ovlp_bf, c_b_occ_pl_sumo))
+S0_ab = jnp.dot(c_a_occ.T, jnp.dot(ovlp_bf, c_b_occ_pl_sumo))
 
 
 def check_permuted_identity(overlap, threshold=0.05):
@@ -453,22 +454,24 @@ def check_permuted_identity(overlap, threshold=0.05):
     return True
 
 
-def antisymm_mat_from_vec(vec):
-    X = jnp.zeros((n_rot_elem, n_rot_elem))
+def antisymm_mat_from_vec(vec,frozen_vec):
+    full_vec = jnp.concatenate((vec,frozen_vec),axis=0)
+    X =(jnp.zeros((n_rot_elem , n_rot_elem)))
     triu_indices = jnp.triu_indices(n_rot_elem, k=1)
-    X = X.at[triu_indices].set(vec)
+    X = X.at[triu_indices].set(full_vec)
     X = X - X.T
     return X
 
 
-def object_func(vec, s_ab_matrix):
+def object_func(vec, s_ab_matrix,frozen_vec):
     # Form antisymmetric matrix from vec
-    W = antisymm_mat_from_vec(vec)
+    W = antisymm_mat_from_vec(vec,frozen_vec)
     # Form rotation matrix from X
     Rt = expm(W)
     # Compute S' = C'_alpha.T S_ao C_beta
     #            = (C_alpha * R).T S_ao C_beta
     #            = R.T C_alpha.T S_ao C_beta
+
     overlap = jnp.dot(Rt.T, s_ab_matrix)
     # Compute penalty by Frobenius Norm of ABS(overlap) subtract I (identity matrix)
     obj_matrix = overlap**2 - jnp.eye(n_rot_elem)
@@ -521,7 +524,7 @@ def write_fchk(a_coefs, a_eners):
 
 # Compute initial guess for optimization
 # Use SVD to compute initial rotation matrix, then logm to get initial W matrix
-U, S, Vt = np.linalg.svd(init_ovlp_ab)
+U, S, Vt = np.linalg.svd(S0_ab)
 init_Rt = U @ Vt
 init_W = np.real(la.logm(init_Rt))
 upper_indices = np.triu_indices_from(init_W, k=1)
@@ -534,9 +537,12 @@ def shi_match():
 
     step = 0
 
+    n_frozen_alpha = args.ext_mo
+    frozen_vec= jnp.zeros(n_frozen_alpha*(n_frozen_alpha-1)//2)
+
     def callback_func(xk):
         nonlocal step
-        J2 = object_func(xk, init_ovlp_ab)
+        J2 = object_func(xk, S0_ab,frozen_vec)
         log.write(f"{step:<4d}   {J2:>13.8f} \n")
         step += 1
 
@@ -547,21 +553,21 @@ def shi_match():
     log.write("--------------------\n")
 
     result = minimize(
-        lambda v, s_ab_matrix: np.asarray(object_func(v, s_ab_matrix)),
+        lambda v, s_ab_matrix,frozen_vec: np.asarray(object_func(v, s_ab_matrix,frozen_vec)),
         init_guess,
-        args=(init_ovlp_ab),
-        jac=lambda v, s_ab_matrix: np.asarray(grad_fn(v, s_ab_matrix)),
+        args=(S0_ab,frozen_vec),
+        jac=lambda v, s_ab_matrix, frozen_vec: np.asarray(grad_fn(v, s_ab_matrix,frozen_vec)),
         method="CG",
         callback=callback_func,
     )
 
     log.write("\n")
     log.write(f"The minimization is done after {result.nit} steps.\n")
-    final_J2 = object_func(result.x, init_ovlp_ab)
+    final_J2 = object_func(result.x, S0_ab,frozen_vec)
     log.write(f"Squared Frobenius norm ||S^2-1||2F  =  {final_J2:.5f} \n")
 
     # Extract the final result
-    final_rotation_matrix = expm(antisymm_mat_from_vec(result.x))
+    final_rotation_matrix = expm(antisymm_mat_from_vec(result.x,frozen_vec))
     log.write("--------------------\n")
 
     a_transformed_occ_coef = np.dot(c_a_occ, final_rotation_matrix)
@@ -580,7 +586,7 @@ def shi_match():
     final_overlap = a_transformed_occ_coef.T @ ovlp_bf @ c_b_occ_pl_sumo
     log.write("\nFINAL OVERLAP\n")
     log.write("=====================\n")
-    print_overlap(final_overlap, 10)
+    print_overlap(final_overlap, 10,True)
 
     log.write("\n")
     if final_J2 > 0.5:
