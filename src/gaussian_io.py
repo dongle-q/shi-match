@@ -1,36 +1,20 @@
 def write_arr_fchk(arr, fchk_output, fchk_input):
-    nelems = len(arr)
-    nlines = nelems // 5
-    ncount = 0
-    for _ in range(nlines):
-        fchk_output.write(
-            "".join(f" {arr[i]:>15.8e}" for i in range(ncount, ncount + 5)) + "\n"
-        )
-        ncount += 5
-    if nelems % 5 != 0:
-        fchk_output.write(
-            "".join(f" {arr[i]:>15.8e}" for i in range(ncount, nelems)) + "\n"
-        )
-        nlines += 1
-    for _ in range(nlines):
+    # Write arr (5 values per line) and skip the replaced lines of the input
+    for start in range(0, len(arr), 5):
+        fchk_output.write("".join(f" {value:>15.8e}" for value in arr[start : start + 5]) + "\n")
         fchk_input.readline()
     return fchk_input.readline()
 
 
-def write_fchk(fch_path, a_coefs, a_eners):
+def write_fchk(fch_path, a_coef, a_ener):
     with open(fch_path, "r") as fchk_input:
         with open("transformed_orbitals.fchk", "w+") as fchk_output:
             line = fchk_input.readline()
             while line:
-                if (
-                    "alpha orbital energies" not in line.lower()
-                    and "alpha mo coefficients" not in line.lower()
-                ):
-                    fchk_output.write(line)
-                    line = fchk_input.readline()
-                elif "alpha orbital energies" in line.lower():
-                    fchk_output.write(line)
-                    line = write_arr_fchk(a_eners, fchk_output, fchk_input)
+                fchk_output.write(line)
+                if "alpha orbital energies" in line.lower():
+                    line = write_arr_fchk(a_ener, fchk_output, fchk_input)
                 elif "alpha mo coefficients" in line.lower():
-                    fchk_output.write(line)
-                    line = write_arr_fchk(a_coefs.flatten(), fchk_output, fchk_input)
+                    line = write_arr_fchk(a_coef.flatten(), fchk_output, fchk_input)
+                else:
+                    line = fchk_input.readline()
