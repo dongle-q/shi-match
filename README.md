@@ -23,7 +23,7 @@ See documentation at https://jautschbach.github.io/shi-match/ for more informati
 Simply run :
 
 ```bash
-shi-match.py <file_47>
+src/shi-match.py <file_47>
 ```
 
 The output will be saved in :file:`shi_match.log`.
@@ -31,7 +31,7 @@ The output will be saved in :file:`shi_match.log`.
 To specify hardware you want to use, you can run with ``-hw`` or ``---hardware`` option
 
 ```bash
-shi-match.py <file47> -hw <hardware>
+src/shi-match.py <file47> -hw <hardware>
 ```
 
 Accpetable hardware options are: ``cpu``, ``cuda`` (NVIDIA GPU), ``rocm`` (AMD GPU) and ``tpu``. The default is ``cpu``.
