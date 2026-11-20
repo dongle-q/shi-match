@@ -62,8 +62,8 @@ parser.add_argument(
     "--target",
     nargs="+",
     default=None,
-    help="Virtual MOs to match, counted from the LUMO of each spin: a0 (= a, alumo, alumo0) is the alpha LUMO, "
-    "a1 the next one, b0 the beta LUMO, ...",
+    help="Virtual MOs to match, counted from the LUMO of each spin: a0 = the first alpha LUMO, "
+    "a1 the next one. Use b for beta LUMO. Default: b0 (first beta LUMO)",
 )
 
 parser.add_argument(
@@ -168,11 +168,11 @@ def match_orbital(ovlp_row, threshold=0.97):
 # Get C, S_ao, Fock matrices, nbas, number of alpha-beta electrons from file47
 # MO coefficient matrices are stored row-wise: one row per MO.
 (
-    a_coef_full,
-    b_coef_full,
-    ao_ovlp,
-    a_fock,
-    b_fock,
+    C_a_full,
+    C_b_full,
+    S_bf,
+    F_a,
+    F_b,
     nbas,
     n_alpha_elec,
     n_beta_elec,
@@ -193,26 +193,20 @@ log.write(f"""
                             2S+1: {n_unpaired + 1}""")
 
 # Overlap between all alpha and all beta MOs
-init_ovlp_full = reduce(np.dot, (a_coef_full, ao_ovlp, b_coef_full.T))
+S_ab_0 = reduce(np.dot, (C_a_full, S_bf, C_b_full.T))
 
 log.write("\nINITIAL OVERLAP\n")
 log.write("=====================\n")
-print_overlap(init_ovlp_full, 10, False, log, n_alpha_elec, a_homo_idx, b_homo_idx)
+print_overlap(S_ab_0, 10, False, log, n_alpha_elec, a_homo_idx, b_homo_idx)
 
-sumo_a_idx = np.argmax(abs(init_ovlp_full[:, b_sumo_idx]))
-sumo_max_ovlp = init_ovlp_full[sumo_a_idx, b_sumo_idx]
-log.write(
-    f"\nMaximal overlap with lowest beta SUMO:    < b_{b_sumo_idx + 1:>} | a_{sumo_a_idx + 1:<} > = {sumo_max_ovlp:<5.4f}\n"
-)
 
 log.write("\n")
 
-
 # Rotation space: all alpha occupied MOs, and beta occupied MOs + beta SUMOs
 n_rot = n_alpha_elec
-a_occ_coef = a_coef_full.T[:, :n_rot]
-b_occ_sumo_coef = b_coef_full.T[:, :n_rot]
-init_ovlp = jnp.dot(a_occ_coef.T, jnp.dot(ao_ovlp, b_occ_sumo_coef))
+C_a_occ = C_a_full.T[:, :n_rot]
+b_occ_sumo_coef = C_b_full.T[:, :n_rot]
+S_ab_0_occ = S_ab_0[:n_rot,:n_rot]
 
 
 def check_permuted_identity(ovlp, threshold=0.05):
@@ -261,9 +255,9 @@ def objective(vec, ovlp):
 
 # Compute initial guess for optimization
 # Use SVD to compute initial rotation matrix, then logm to get initial W matrix
-U, _, Vt = np.linalg.svd(init_ovlp)
-init_W = np.real(la.logm(U @ Vt))
-init_guess = init_W[np.triu_indices_from(init_W, k=1)]
+U, _, Vt = np.linalg.svd(S_ab_0_occ)
+W0 = np.real(la.logm(U @ Vt))
+X0 = W0[np.triu_indices_from(W0, k=1)]
 
 
 def shi_match():
@@ -274,7 +268,7 @@ def shi_match():
 
     def callback_func(xk):
         nonlocal step
-        log.write(f"{step:<4d}   {objective(xk, init_ovlp):>13.8f} \n")
+        log.write(f"{step:<4d}   {objective(xk, S_ab_0_occ):>13.8f} \n")
         step += 1
 
     log.write("====================\n")
@@ -285,8 +279,8 @@ def shi_match():
 
     result = minimize(
         lambda v, ovlp: np.asarray(objective(v, ovlp)),
-        init_guess,
-        args=(init_ovlp,),
+        X0,
+        args=(S_ab_0_occ,),
         jac=lambda v, ovlp: np.asarray(grad_fn(v, ovlp)),
         method="CG",
         callback=callback_func,
@@ -294,27 +288,27 @@ def shi_match():
 
     log.write("\n")
     log.write(f"The minimization is done after {result.nit} steps.\n")
-    final_obj = objective(result.x, init_ovlp)
+    final_obj = objective(result.x, S_ab_0_occ)
     log.write(f"Squared Frobenius norm ||S^2-1||2F  =  {final_obj:.5f} \n")
 
     # Extract the final result
-    rotation = expm(antisymm_mat_from_vec(result.x))
+    R = expm(antisymm_mat_from_vec(result.x))
     log.write("--------------------\n")
 
-    a_trans_coef = np.dot(a_occ_coef, rotation)
-    a_trans_ener = HARTREE_TO_EV * (a_trans_coef.T @ a_fock @ a_trans_coef).diagonal()
-    a_canon_ener = HARTREE_TO_EV * (a_coef_full @ a_fock @ a_coef_full.T).diagonal()
-    b_ener = HARTREE_TO_EV * (b_coef_full @ b_fock @ b_coef_full.T).diagonal()
+    C_a_prime = np.dot(C_a_occ, R)
+    E_a_prime = HARTREE_TO_EV * (C_a_prime.T @ F_a @ C_a_prime).diagonal()
+    E_a_canon = HARTREE_TO_EV * (C_a_full @ F_a @ C_a_full.T).diagonal()
+    E_b_canon = HARTREE_TO_EV * (C_b_full @ F_b @ C_b_full.T).diagonal()
 
     # Sort transformed alpha occupied MOs by energy
-    ener_order = np.argsort(a_trans_ener)
-    a_trans_ener = a_trans_ener[ener_order]
-    a_trans_coef = a_trans_coef[:, ener_order]
+    ener_order = np.argsort(E_a_prime)
+    E_a_prime = E_a_prime[ener_order]
+    C_a_prime = C_a_prime[:, ener_order]
 
-    final_ovlp = a_trans_coef.T @ ao_ovlp @ b_occ_sumo_coef
+    S_ab_f = C_a_prime.T @ S_bf @ b_occ_sumo_coef
     log.write("\nFINAL OVERLAP\n")
     log.write("=====================\n")
-    print_overlap(final_ovlp, 10, True, log, n_alpha_elec, a_homo_idx, b_homo_idx)
+    print_overlap(S_ab_f, 10, True, log, n_alpha_elec, a_homo_idx, b_homo_idx)
 
     log.write("\n")
     if final_obj > 0.5:
@@ -322,7 +316,7 @@ def shi_match():
 
     log.write("\n")
 
-    if not check_permuted_identity(final_ovlp):
+    if not check_permuted_identity(S_ab_f):
         log.write("WARNING: Overlap matrix is not permuted identity.\n")
         log.write("JOB FAILED\n")
         return False
@@ -334,7 +328,7 @@ def shi_match():
     log.write("--------------------------------\n")
     for a_idx in range(n_alpha_elec):
         log.write(
-            f"""{a_idx + 1:<4d} {a_canon_ener[a_idx]:>12.3f}   {a_trans_ener[a_idx]:>12.3f}   \n"""
+            f"""{a_idx + 1:<4d} {E_a_canon[a_idx]:>12.3f}   {E_a_prime[a_idx]:>12.3f}   \n"""
         )
 
     log.write("\n\n")
@@ -345,12 +339,12 @@ def shi_match():
     log.write("------------------------------------------\n")
     for a_idx in range(n_alpha_elec):
         ovlp_str = (
-            f"{final_ovlp[a_idx, a_idx]:>5.2f}"
-            if abs(final_ovlp[a_idx, a_idx]) > 0.01
+            f"{S_ab_f[a_idx, a_idx]:>5.2f}"
+            if abs(S_ab_f[a_idx, a_idx]) > 0.01
             else "  0  "
         )
         log.write(
-            f"""{a_idx + 1:<4d} {a_trans_ener[a_idx]:>13.3f}   {b_ener[a_idx]:>13.3f}   {ovlp_str}\n"""
+            f"""{a_idx + 1:<4d} {E_a_prime[a_idx]:>13.3f}   {E_b_canon[a_idx]:>13.3f}   {ovlp_str}\n"""
         )
 
     a_somo_indices = []
@@ -363,7 +357,7 @@ def shi_match():
     log.write("alpha(i)  beta(j)  S_ij    swap\n")
     log.write("-------------------------------\n")
     for a_idx in range(n_alpha_elec):
-        b_idx, ovlp = match_orbital(final_ovlp[a_idx, :])
+        b_idx, ovlp = match_orbital(S_ab_f[a_idx, :])
         note = "   " if a_idx == b_idx else "yes"
         log.write(
             f"""   {a_idx + 1:>5d}  {b_idx + 1:<5d}    {ovlp:>5.2f}    {note} \n"""
@@ -380,15 +374,15 @@ def shi_match():
     log.write("---------------------------------------------\n")
     for a_idx, b_idx in zip(a_somo_indices, b_sumo_indices):
         log.write(
-            f"""{a_idx + 1:>5d} {b_idx + 1:<5d} {final_ovlp[a_idx, b_idx]:>5.2f} {a_trans_ener[a_idx]:>13.3f} {b_ener[b_idx]:>13.3f} \n"""
+            f"""{a_idx + 1:>5d} {b_idx + 1:<5d} {S_ab_f[a_idx, b_idx]:>5.2f} {E_a_prime[a_idx]:>13.3f} {E_b_canon[b_idx]:>13.3f} \n"""
         )
         # Alpha SOMO matched with the lowest beta SUMO
         if b_idx == b_sumo_idx:
             a_somo_idx = a_idx
-            a_somo_ener = a_trans_ener[a_idx]
+            a_somo_ener = E_a_prime[a_idx]
 
-    b_homo_ener = b_ener[b_homo_idx]
-    a_homo_ener = np.max(a_trans_ener)
+    b_homo_ener = E_b_canon[b_homo_idx]
+    a_homo_ener = np.max(E_a_prime)
 
     shi_gap = a_homo_ener - a_somo_ener
     log.write("\n\n")
@@ -397,7 +391,7 @@ def shi_match():
     log.write("=====================================\n")
     log.write("  alpha                 beta\n\n")
     log.write(
-        f"  HOMO: {a_homo_ener:<10.4f}      SUMO: {b_ener[b_sumo_idx]:<10.4f}\n"
+        f"  HOMO: {a_homo_ener:<10.4f}      SUMO: {E_b_canon[b_sumo_idx]:<10.4f}\n"
     )
     if a_homo_idx != a_somo_idx:
         log.write(f"                        HOMO: {b_homo_ener:<10.4f}\n\n")
@@ -407,8 +401,8 @@ def shi_match():
             f"  SOMO: {a_somo_ener:<10.4f}      HOMO: {b_homo_ener:<10.4f}\n"
         )
     log.write(f"  ---------------\n  SHI gap: {shi_gap:.4f}\n")
-    a_full_ener = np.concatenate((a_trans_ener, a_canon_ener[n_alpha_elec:]))
-    a_full_coef = np.vstack((a_trans_coef.T, a_coef_full[n_alpha_elec:, :]))
+    a_full_ener = np.concatenate((E_a_prime, E_a_canon[n_alpha_elec:]))
+    a_full_coef = np.vstack((C_a_prime.T, C_a_full[n_alpha_elec:, :]))
     log.write("\n")
 
     if shi_gap == 0.0 and b_homo_ener < a_homo_ener:
@@ -475,10 +469,10 @@ def match_targets(a_targ_idx, b_targ_idx):
     Step 1: rotate alpha occ. to match the remaining beta targets. These pairs are frozen.
     Step 2: rotate beta occ. to match the remaining alpha targets, excluding the frozen pairs.
     """
-    a_occ = a_coef_full.T[:, :n_alpha_elec]
-    b_occ = b_coef_full.T[:, :n_beta_elec]
-    a_targ = a_coef_full.T[:, a_targ_idx]
-    b_targ = b_coef_full.T[:, b_targ_idx]
+    a_occ = C_a_full.T[:, :n_alpha_elec]
+    b_occ = C_b_full.T[:, :n_beta_elec]
+    a_targ = C_a_full.T[:, a_targ_idx]
+    b_targ = C_b_full.T[:, b_targ_idx]
     # Mixing of the canonical targets: column j = current target j in the canonical target basis
     a_mix = np.eye(len(a_targ_idx))
     b_mix = np.eye(len(b_targ_idx))
@@ -496,7 +490,7 @@ def match_targets(a_targ_idx, b_targ_idx):
     # Step 0: alpha target <-> beta target -------------------------------------------------
     n_vv = 0
     if a_targ_idx and b_targ_idx:
-        U, sigma, Wt = np.linalg.svd(a_targ.T @ ao_ovlp @ b_targ)
+        U, sigma, Wt = np.linalg.svd(a_targ.T @ S_bf @ b_targ)
         if len(a_targ_idx) >= 2:
             a_targ, a_mix = a_targ @ U, a_mix @ U
         if len(b_targ_idx) >= 2:
@@ -514,7 +508,7 @@ def match_targets(a_targ_idx, b_targ_idx):
     R_a, a_slots = np.eye(n_alpha_elec), []
     R_b, b_slots = np.eye(n_beta_elec), []
     if n_b_rem > 0:
-        U_a, sigma_b, W_b = best_partners(a_occ, b_targ[:, n_vv:], ao_ovlp)
+        U_a, sigma_b, W_b = best_partners(a_occ, b_targ[:, n_vv:], S_bf)
         if n_b_rem >= 2:
             b_targ[:, n_vv:] = b_targ[:, n_vv:] @ W_b
             b_mix[:, n_vv:] = b_mix[:, n_vv:] @ W_b
@@ -525,7 +519,7 @@ def match_targets(a_targ_idx, b_targ_idx):
             + "\n"
         )
     if n_a_rem > 0:
-        U_b, sigma_a, W_a = best_partners(b_occ, a_targ[:, n_vv:], ao_ovlp)
+        U_b, sigma_a, W_a = best_partners(b_occ, a_targ[:, n_vv:], S_bf)
         if n_a_rem >= 2:
             a_targ[:, n_vv:] = a_targ[:, n_vv:] @ W_a
             a_mix[:, n_vv:] = a_mix[:, n_vv:] @ W_a
@@ -556,7 +550,7 @@ def match_targets(a_targ_idx, b_targ_idx):
                 b_ref = np.empty((a_occ.shape[0], n_alpha_elec))
                 b_ref[:, a_slots] = b_targ[:, n_vv:]
                 b_ref[:, a_others] = np.delete(b_occ @ R_b, b_slots, axis=1)
-                R_a, _ = minimize_rotation(a_occ.T @ ao_ovlp @ b_ref, log)
+                R_a, _ = minimize_rotation(a_occ.T @ S_bf @ b_ref, log)
                 log.write("\n")
             if n_a_rem > 0:
                 # Step 2: rotate beta occ. Reference: alpha targets in the partner slots, alpha occ.
@@ -566,17 +560,17 @@ def match_targets(a_targ_idx, b_targ_idx):
                 a_ref = np.empty((b_occ.shape[0], n_beta_elec))
                 a_ref[:, b_slots] = a_targ[:, n_vv:]
                 a_ref[:, b_others] = np.delete(a_occ @ R_a, a_slots, axis=1)
-                R_b, _ = minimize_rotation(b_occ.T @ ao_ovlp @ a_ref, log)
+                R_b, _ = minimize_rotation(b_occ.T @ S_bf @ a_ref, log)
                 log.write("\n")
 
     a_occ_trans = a_occ @ R_a
     b_occ_trans = b_occ @ R_b
-    a_occ_ener = mo_energies(a_occ_trans, a_fock)
-    b_occ_ener = mo_energies(b_occ_trans, b_fock)
+    a_occ_ener = mo_energies(a_occ_trans, F_a)
+    b_occ_ener = mo_energies(b_occ_trans, F_b)
 
     # Check of the remaining occ.-occ. pairs
     rest_sigma = np.linalg.svd(
-        np.delete(a_occ_trans, a_slots, axis=1).T @ ao_ovlp @ np.delete(b_occ_trans, b_slots, axis=1),
+        np.delete(a_occ_trans, a_slots, axis=1).T @ S_bf @ np.delete(b_occ_trans, b_slots, axis=1),
         compute_uv=False,
     )
     n_small = int(np.sum(rest_sigma < PAIR_WARN_THRESHOLD))
@@ -608,14 +602,14 @@ def match_targets(a_targ_idx, b_targ_idx):
     b_order = np.argsort(b_occ_ener)
     a_pos = assign_positions(a_mix, a_targ_idx) if a_targ_idx else []
     b_pos = assign_positions(b_mix, b_targ_idx) if b_targ_idx else []
-    a_full_coef = a_coef_full.copy()
-    b_full_coef = b_coef_full.copy()
+    a_full_coef = C_a_full.copy()
+    b_full_coef = C_b_full.copy()
     a_full_coef[:n_alpha_elec] = a_occ_trans[:, a_order].T
     b_full_coef[:n_beta_elec] = b_occ_trans[:, b_order].T
     a_full_coef[a_pos] = a_targ.T
     b_full_coef[b_pos] = b_targ.T
-    a_full_ener = mo_energies(a_full_coef.T, a_fock)
-    b_full_ener = mo_energies(b_full_coef.T, b_fock)
+    a_full_ener = mo_energies(a_full_coef.T, F_a)
+    b_full_ener = mo_energies(b_full_coef.T, F_b)
 
     # Prime: transformed MO (alpha occ. is rotated if there are beta targets, and vice versa)
     def a_label(idx):
@@ -636,7 +630,7 @@ def match_targets(a_targ_idx, b_targ_idx):
         pairs.append(("b-SOMO/a-SUMO", a_pos[n_vv + j], int(np.where(b_order == b_slots[j])[0][0])))
 
     n_show = max([n_alpha_elec] + [i + 1 for i in a_targ_idx + b_targ_idx])
-    final_ovlp = a_full_coef[:n_show] @ ao_ovlp @ b_full_coef[:n_show].T
+    final_ovlp = a_full_coef[:n_show] @ S_bf @ b_full_coef[:n_show].T
     log.write("\nFINAL OVERLAP\n")
     log.write("=====================\n")
     print_overlap(final_ovlp, 10, True, log, n_show, a_homo_idx, b_homo_idx)
@@ -648,7 +642,7 @@ def match_targets(a_targ_idx, b_targ_idx):
     log.write("type             alpha      beta        S_ij   E_alpha(eV)  E_beta(eV)\n")
     log.write("------------------------------------------------------------------\n")
     for kind, a_idx, b_idx in pairs:
-        ovlp = a_full_coef[a_idx] @ ao_ovlp @ b_full_coef[b_idx]
+        ovlp = a_full_coef[a_idx] @ S_bf @ b_full_coef[b_idx]
         log.write(
             f"{kind:<15s}  {a_label(a_idx):<9s}  {b_label(b_idx):<9s} {ovlp:>7.4f}  "
             f"{a_full_ener[a_idx]:>11.3f}  {b_full_ener[b_idx]:>10.3f}\n"
