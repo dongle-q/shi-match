@@ -379,12 +379,12 @@ def shi_match():
         # Alpha SOMO matched with the lowest beta SUMO
         if b_idx == b_sumo_idx:
             a_somo_idx = a_idx
-            a_somo_ener = E_a_prime[a_idx]
+            E_a_SOMO = E_a_prime[a_idx]
 
-    b_homo_ener = E_b_canon[b_homo_idx]
+    E_b_HOMO = E_b_canon[b_homo_idx]
     a_homo_ener = np.max(E_a_prime)
 
-    shi_gap = a_homo_ener - a_somo_ener
+    shi_gap = a_homo_ener - E_a_SOMO
     log.write("\n\n")
     log.write("=====================================\n")
     log.write("              SHI GAP\n")
@@ -394,24 +394,24 @@ def shi_match():
         f"  HOMO: {a_homo_ener:<10.4f}      SUMO: {E_b_canon[b_sumo_idx]:<10.4f}\n"
     )
     if a_homo_idx != a_somo_idx:
-        log.write(f"                        HOMO: {b_homo_ener:<10.4f}\n\n")
-        log.write(f"  SOMO: {a_somo_ener:<10.4f}\n")
+        log.write(f"                        HOMO: {E_b_HOMO:<10.4f}\n\n")
+        log.write(f"  SOMO: {E_a_SOMO:<10.4f}\n")
     else:
         log.write(
-            f"  SOMO: {a_somo_ener:<10.4f}      HOMO: {b_homo_ener:<10.4f}\n"
+            f"  SOMO: {E_a_SOMO:<10.4f}      HOMO: {E_b_HOMO:<10.4f}\n"
         )
     log.write(f"  ---------------\n  SHI gap: {shi_gap:.4f}\n")
     a_full_ener = np.concatenate((E_a_prime, E_a_canon[n_alpha_elec:]))
     a_full_coef = np.vstack((C_a_prime.T, C_a_full[n_alpha_elec:, :]))
     log.write("\n")
 
-    if shi_gap == 0.0 and b_homo_ener < a_homo_ener:
+    if shi_gap == 0.0 and E_b_HOMO < a_homo_ener:
         shi_class = "non-SHI"
         log.write("Classification: non-SHI\n")
-    elif shi_gap == 0.0 and b_homo_ener > a_homo_ener:
+    elif shi_gap == 0.0 and E_b_HOMO > a_homo_ener:
         shi_class = "partial"
         log.write("Classification: partial-SHI")
-    elif shi_gap > 0.0 and b_homo_ener > a_homo_ener:
+    elif shi_gap > 0.0 and E_b_HOMO > a_homo_ener:
         shi_class = "SHI"
         log.write("Classification: SHI")
 
@@ -462,12 +462,10 @@ def classify_shi(somo_is_homo, shi_gap, own_homo_ener, other_homo_ener):
 
 
 def match_targets(a_targ_idx, b_targ_idx):
-    """Match target virtual MOs with occupied MOs of the opposite spin.
-
-    Step 0: alpha and beta targets that overlap each other are paired directly (no occupied
-            partner, no SHI).
-    Step 1: rotate alpha occ. to match the remaining beta targets. These pairs are frozen.
-    Step 2: rotate beta occ. to match the remaining alpha targets, excluding the frozen pairs.
+    """
+    Step 0: [multiple targets only] check if alpha-beta vir. overlap is high --> non SHI
+    Step 1: rotate alpha occ. to match the remaining beta targets.
+    Step 2: rotate beta occ. to match the remaining alpha targets, excluding the frozen pairs (from step 1).
     """
     a_occ = C_a_full.T[:, :n_alpha_elec]
     b_occ = C_b_full.T[:, :n_beta_elec]
