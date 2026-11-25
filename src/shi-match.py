@@ -61,7 +61,7 @@ parser.add_argument(
 parser.add_argument(
     "--target",
     nargs="+",
-    default=None,
+    default=["b0"],
     help="Virtual MOs to match, counted from the LUMO of each spin: a0 = the first alpha LUMO, "
     "a1 the next one. Use b for beta LUMO. Default: b0 (first beta LUMO)",
 )
