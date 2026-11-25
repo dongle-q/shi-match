@@ -62,8 +62,7 @@ parser.add_argument(
     "--target",
     nargs="+",
     default=["b0"],
-    help="Virtual MOs to match, counted from the LUMO of each spin: a0 = the first alpha LUMO, "
-    "a1 the next one. Use b for beta LUMO. Default: b0 (first beta LUMO)",
+    help="Targeting virtual MOs to match, counting from 0, a=alpha, b=beta. Default: b0",
 )
 
 parser.add_argument(
@@ -496,13 +495,13 @@ def match_targets(a_targ_idx, b_targ_idx):
     print_overlap(final_ovlp, 10, True, log, n_show, a_homo_idx, b_homo_idx)
 
     log.write("\n\n")
-    log.write("==================================================================\n")
+    log.write("======================================================================\n")
     log.write("                         MATCHED PAIRS\n")
-    log.write("==================================================================\n")
+    log.write("======================================================================\n")
     log.write(
         "type             alpha      beta        S_ij   E_alpha(eV)  E_beta(eV)\n"
     )
-    log.write("------------------------------------------------------------------\n")
+    log.write("----------------------------------------------------------------------\n")
     for kind, a_idx, b_idx in pairs:
         ovlp = a_full_coef[a_idx] @ S_bf @ b_full_coef[b_idx]
         log.write(
@@ -518,16 +517,16 @@ def match_targets(a_targ_idx, b_targ_idx):
     a_homo_ener = a_occ_ener[a_homo_slot]
     b_homo_ener = b_occ_ener[b_homo_slot]
     log.write("\n\n")
-    log.write("=====================================================================\n")
+    log.write("======================================================================\n")
     log.write("                              SHI GAP\n")
-    log.write("=====================================================================\n")
+    log.write("======================================================================\n")
     log.write(
         f"Transformed HOMO (eV): alpha {a_homo_ener:.4f}, beta {b_homo_ener:.4f}\n\n"
     )
     log.write(
         "SOMO        SUMO         E_HOMO     E_SOMO     E_SUMO   SHI gap  class\n"
     )
-    log.write("---------------------------------------------------------------------\n")
+    log.write("----------------------------------------------------------------------\n")
     for kind, a_idx, b_idx in pairs:
         if kind == "virt-virt":
             continue
@@ -555,8 +554,8 @@ def match_targets(a_targ_idx, b_targ_idx):
             )
         shi_gap = 0.0 if somo_is_homo else homo_ener - somo_ener
         log.write(
-            f"{somo_label:<10s}  {sumo_label:<10s} {homo_ener:>8.4f}  {somo_ener:>8.4f}  {sumo_ener:>8.4f}  "
-            f"{shi_gap:>7.4f}  {'partial-SHI' if shi_class == 'partial' else shi_class}\n"
+            f"{somo_label:<10s}  {sumo_label:<10s} {homo_ener:>8.4f}   {somo_ener:>8.4f}   {sumo_ener:>8.4f}  "
+            f" {shi_gap:>7.4f}  {'partial-SHI' if shi_class == 'partial' else shi_class}\n"
         )
         print(somo_label, sumo_label, shi_gap, shi_class)
     if n_vv > 0:
